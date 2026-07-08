@@ -4,12 +4,23 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { DashboardStats, FloorUtilization, ProjectDistribution, DepartmentDistribution, ActivityLog } from "@/types";
 import StatCard from "@/components/StatCard";
+import PageHeader from "@/components/PageHeader";
+import { LoadingSpinner, ErrorState, SkeletonCard } from "@/components/Loading";
+import { DashboardIcon, UsersIcon, SparkleIcon, FolderIcon } from "@/components/Sidebar";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  PieChart, Pie, Cell, Legend, LineChart, Line,
+  PieChart, Pie, Cell, Legend,
 } from "recharts";
 
-const PIE_COLORS = ["#2563eb", "#7c3aed", "#16a34a", "#d97706", "#dc2626", "#0891b2", "#db2777", "#65a30d"];
+const PIE_COLORS = ["#4f46e5", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
+
+const TOOLTIP_STYLE = {
+  borderRadius: 12,
+  border: "1px solid #e2e8f0",
+  fontSize: 12,
+  boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+  padding: "8px 12px",
+};
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -41,83 +52,126 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="spinner" style={{ width: 32, height: 32 }} />
+      <div className="fade-in">
+        <PageHeader title="Dashboard" description="Real-time overview of seat allocation, projects, and employees at Ethara." />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
+        </div>
       </div>
     );
   }
 
   if (error) {
-    return (
-      <div className="card border-rose-300 bg-rose-50">
-        <h3 className="font-semibold text-rose-700">Failed to load dashboard</h3>
-        <p className="text-sm text-rose-600 mt-1">{error}</p>
-        <p className="text-xs text-rose-500 mt-2">Make sure the backend is running on http://localhost:8000</p>
-      </div>
-    );
+    return <ErrorState message={error} hint="Make sure the backend is running and the database is seeded." />;
   }
 
   if (!stats) return null;
 
   const seatPieData = [
-    { name: "Occupied", value: stats.occupied_seats, color: "#2563eb" },
-    { name: "Available", value: stats.available_seats, color: "#16a34a" },
-    { name: "Reserved", value: stats.reserved_seats, color: "#d97706" },
-    { name: "Maintenance", value: stats.maintenance_seats, color: "#dc2626" },
+    { name: "Occupied", value: stats.occupied_seats, color: "#4f46e5" },
+    { name: "Available", value: stats.available_seats, color: "#10b981" },
+    { name: "Reserved", value: stats.reserved_seats, color: "#f59e0b" },
+    { name: "Maintenance", value: stats.maintenance_seats, color: "#ef4444" },
   ];
 
   return (
     <div className="space-y-6 fade-in">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-600 mt-1">
-          Real-time overview of seat allocation, projects, and employees at Ethara.
-        </p>
-      </header>
+      <PageHeader
+        title="Dashboard"
+        description="Real-time overview of seat allocation, projects, and employees at Ethara."
+        badge={<span className="badge badge-success badge-dot">Live</span>}
+      />
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Employees" value={stats.total_employees.toLocaleString()} icon="👥" color="blue" hint={`${stats.active_employees.toLocaleString()} active`} />
-        <StatCard label="New Joiners" value={stats.new_joiners} icon="✨" color="violet" hint="Awaiting seat allocation" />
-        <StatCard label="Seat Utilization" value={`${stats.utilization_pct}%`} icon="🪑" color="amber" hint={`${stats.occupied_seats}/${stats.total_seats} seats`} trend={stats.utilization_pct > 80 ? "up" : "neutral"} />
-        <StatCard label="Active Projects" value={stats.active_projects} icon="📁" color="green" hint={`${stats.total_projects} total projects`} />
+        <StatCard
+          label="Total Employees"
+          value={stats.total_employees.toLocaleString()}
+          icon={<UsersIcon className="w-5 h-5" />}
+          color="indigo"
+          hint={`${stats.active_employees.toLocaleString()} active`}
+        />
+        <StatCard
+          label="New Joiners"
+          value={stats.new_joiners}
+          icon={<SparkleIcon className="w-5 h-5" />}
+          color="violet"
+          hint="Awaiting seat allocation"
+        />
+        <StatCard
+          label="Seat Utilization"
+          value={`${stats.utilization_pct}%`}
+          icon={<DashboardIcon className="w-5 h-5" />}
+          color="amber"
+          hint={`${stats.occupied_seats}/${stats.total_seats} seats`}
+          progress={stats.utilization_pct}
+        />
+        <StatCard
+          label="Active Projects"
+          value={stats.active_projects}
+          icon={<FolderIcon className="w-5 h-5" />}
+          color="emerald"
+          hint={`${stats.total_projects} total projects`}
+        />
       </div>
 
       {/* Charts row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="card lg:col-span-2">
-          <h3 className="font-semibold text-slate-900 mb-1">Floor-wise Utilization</h3>
-          <p className="text-xs text-slate-500 mb-4">Occupied vs. total seats per floor</p>
-          <div style={{ width: "100%", height: 260 }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold text-slate-900">Floor-wise Utilization</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Occupied vs. total seats per floor</p>
+            </div>
+            <span className="badge badge-info">{stats.total_floors} floors</span>
+          </div>
+          <div style={{ width: "100%", height: 280 }}>
             <ResponsiveContainer>
-              <BarChart data={floors} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="floor_name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
-                  formatter={(value: any, name: any) => [value, name === "occupied" ? "Occupied" : "Total Seats"]}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="total" name="Total Seats" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="occupied" name="Occupied" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              <BarChart data={floors} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="gradOccupied" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4f46e5" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.85} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="floor_name" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#f8fafc" }} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
+                <Bar dataKey="total" name="Total Seats" fill="#e2e8f0" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="occupied" name="Occupied" fill="url(#gradOccupied)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="card">
-          <h3 className="font-semibold text-slate-900 mb-1">Seat Status</h3>
-          <p className="text-xs text-slate-500 mb-4">Distribution of all {stats.total_seats} seats</p>
-          <div style={{ width: "100%", height: 260 }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold text-slate-900">Seat Status</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Distribution of {stats.total_seats} seats</p>
+            </div>
+          </div>
+          <div style={{ width: "100%", height: 280 }}>
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={seatPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(e) => `${e.name}: ${e.value}`}>
+                <Pie
+                  data={seatPieData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={90}
+                  paddingAngle={2}
+                  label={(e: any) => e.value > 0 ? `${e.name}: ${e.value}` : ""}
+                >
                   {seatPieData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
+                    <Cell key={i} fill={entry.color} stroke="white" strokeWidth={2} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -125,18 +179,22 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="card">
-          <h3 className="font-semibold text-slate-900 mb-1">Top Projects by Employee Count</h3>
-          <p className="text-xs text-slate-500 mb-4">Projects with the most assigned employees</p>
-          <div style={{ width: "100%", height: 280 }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold text-slate-900">Top Projects by Team Size</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Projects with the most assigned employees</p>
+            </div>
+          </div>
+          <div style={{ width: "100%", height: 300 }}>
             <ResponsiveContainer>
-              <BarChart data={projects} layout="vertical" margin={{ top: 5, right: 30, left: 5, bottom: 5 }}>
+              <BarChart data={projects} layout="vertical" margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 12 }} />
-                <YAxis type="category" dataKey="project_name" tick={{ fontSize: 11 }} width={120} />
-                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
-                <Bar dataKey="employee_count" name="Employees" radius={[0, 4, 4, 0]}>
+                <XAxis type="number" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="project_name" tick={{ fontSize: 11, fill: "#64748b" }} width={110} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#f8fafc" }} />
+                <Bar dataKey="employee_count" name="Employees" radius={[0, 6, 6, 0]}>
                   {projects.map((_, i) => (
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
@@ -147,17 +205,30 @@ export default function DashboardPage() {
         </div>
 
         <div className="card">
-          <h3 className="font-semibold text-slate-900 mb-1">Department Distribution</h3>
-          <p className="text-xs text-slate-500 mb-4">Headcount across departments</p>
-          <div style={{ width: "100%", height: 280 }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold text-slate-900">Department Distribution</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Headcount across departments</p>
+            </div>
+          </div>
+          <div style={{ width: "100%", height: 300 }}>
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={departments} dataKey="employee_count" nameKey="department" cx="50%" cy="50%" outerRadius={90} label={(e: any) => e.department}>
+                <Pie
+                  data={departments}
+                  dataKey="employee_count"
+                  nameKey="department"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={95}
+                  label={(e: any) => e.employee_count > 50 ? e.department : ""}
+                  labelLine={false}
+                >
                   {departments.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="white" strokeWidth={2} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -166,23 +237,28 @@ export default function DashboardPage() {
 
       {/* Activity logs */}
       <div className="card">
-        <h3 className="font-semibold text-slate-900 mb-1">Recent Activity</h3>
-        <p className="text-xs text-slate-500 mb-4">Latest seat allocation / release events</p>
-        <div className="space-y-2">
-          {logs.length === 0 && <p className="text-sm text-slate-500">No recent activity.</p>}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-slate-900">Recent Activity</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Latest seat allocation / release events</p>
+          </div>
+          <a href="/analytics" className="btn btn-ghost btn-sm">View all →</a>
+        </div>
+        <div className="space-y-1">
+          {logs.length === 0 && <p className="text-sm text-slate-500 py-6 text-center">No recent activity.</p>}
           {logs.map((log) => (
-            <div key={log.id} className="flex items-center justify-between text-sm border-b border-slate-100 last:border-0 py-2">
+            <div key={log.id} className="flex items-center justify-between text-sm py-2.5 px-3 rounded-lg hover:bg-slate-50 transition-colors">
               <div className="flex items-center gap-3">
                 <span className={`badge ${
                   log.action === "ALLOCATE" ? "badge-info" :
                   log.action === "RELEASE" ? "badge-warning" :
                   log.action === "RESERVE" ? "badge-success" :
                   "badge-muted"
-                }`}>{log.action}</span>
+                } badge-dot`}>{log.action}</span>
                 <span className="text-slate-700">{log.details || "—"}</span>
               </div>
-              <span className="text-xs text-slate-500">
-                {new Date(log.created_at).toLocaleString()}
+              <span className="text-xs text-slate-400 font-mono">
+                {new Date(log.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
               </span>
             </div>
           ))}

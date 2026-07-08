@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -163,8 +164,15 @@ def seed_employees(db: Session, projects: list[Project], seats: list[Seat], coun
 
     for i in range(count):
         full_name = fake.name()
+        # Strip leading titles (Mr., Mrs., Dr., Ms., Prof.) before generating email,
+        # otherwise "Dr. Jane Smith" becomes "dr..jane.smith@..." which fails EmailStr validation.
+        name_for_email = re.sub(r"^(Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.)\s+", "", full_name)
+        # Also strip trailing suffixes (Jr., Sr., II, III, MD, PhD)
+        name_for_email = re.sub(r",?\s+(Jr\.|Sr\.|II|III|IV|MD|PhD|DDS)$", "", name_for_email)
         # unique email
-        base = full_name.lower().replace(" ", ".")
+        base = name_for_email.lower().replace(" ", ".")
+        # collapse any accidental double dots
+        base = re.sub(r"\.+", ".", base).strip(".")
         email = f"{base}@ethara.com"
         suffix = 1
         while email in used_emails:

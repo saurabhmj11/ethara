@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { Employee, Project, Floor } from "@/types";
 import { formatDate } from "@/lib/utils";
+import PageHeader from "@/components/PageHeader";
+import { LoadingSpinner, EmptyState } from "@/components/Loading";
+import { UsersIcon } from "@/components/Sidebar";
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -59,18 +62,22 @@ export default function EmployeesPage() {
   useEffect(() => { load(); }, [load]);
 
   const resetPage = () => setPage(1);
+  const activeFilters = [search, statusFilter, departmentFilter, projectFilter, floorFilter, hasSeatFilter].filter(Boolean).length;
 
   return (
     <div className="space-y-5 fade-in">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Employees</h1>
-          <p className="text-sm text-slate-600 mt-1">{total.toLocaleString()} employees total</p>
-        </div>
-      </header>
+      <PageHeader
+        title="Employees"
+        description={`${total.toLocaleString()} employees total`}
+        badge={activeFilters > 0 ? <span className="badge badge-info">{activeFilters} filter{activeFilters > 1 ? "s" : ""}</span> : undefined}
+      />
 
       {/* Filters */}
       <div className="card">
+        <div className="flex items-center gap-2 mb-3">
+          <UsersIcon className="w-4 h-4 text-slate-400" />
+          <span className="text-xs uppercase font-bold tracking-wider text-slate-500">Search & Filter</span>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <input
             className="input"
@@ -123,42 +130,49 @@ export default function EmployeesPage() {
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={9} className="text-center py-8 text-slate-500"><span className="spinner mr-2" />Loading...</td></tr>
+                <tr><td colSpan={9}><LoadingSpinner label="Loading employees..." /></td></tr>
               )}
               {!loading && employees.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-8 text-slate-500">No employees match your filters.</td></tr>
+                <tr><td colSpan={9}><EmptyState icon="🔍" title="No employees match your filters" description="Try adjusting or clearing your search criteria." /></td></tr>
               )}
               {!loading && employees.map((e) => (
                 <tr key={e.id}>
-                  <td className="font-mono text-xs">{e.emp_code}</td>
+                  <td className="font-mono text-xs text-slate-500">{e.emp_code}</td>
                   <td>
-                    <div className="font-medium text-slate-900">{e.full_name}</div>
-                    <div className="text-xs text-slate-500">{e.email}</div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        {e.full_name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-slate-900">{e.full_name}</div>
+                        <div className="text-xs text-slate-500">{e.email}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>{e.department || "—"}</td>
-                  <td>{e.designation || "—"}</td>
+                  <td className="text-slate-600">{e.designation || "—"}</td>
                   <td>
                     {e.project_name ? (
                       <div>
-                        <div className="font-medium">{e.project_name}</div>
-                        <div className="text-xs text-slate-500 font-mono">{e.project_code}</div>
+                        <div className="font-medium text-slate-800">{e.project_name}</div>
+                        <div className="text-xs text-slate-400 font-mono">{e.project_code}</div>
                       </div>
                     ) : <span className="text-slate-400">—</span>}
                   </td>
                   <td>
                     {e.seat_number ? (
-                      <span className="font-mono text-xs">{e.seat_number}</span>
+                      <span className="font-mono text-xs px-2 py-1 bg-slate-100 rounded text-slate-700">{e.seat_number}</span>
                     ) : <span className="text-slate-400">—</span>}
                   </td>
-                  <td>{e.floor_name || "—"}</td>
+                  <td className="text-slate-600">{e.floor_name || "—"}</td>
                   <td>
-                    <span className={`badge ${
+                    <span className={`badge badge-dot ${
                       e.status === "ACTIVE" ? "badge-success" :
                       e.status === "ONBOARDING" ? "badge-warning" :
                       "badge-muted"
                     }`}>{e.status}</span>
                   </td>
-                  <td className="text-xs">{formatDate(e.join_date)}</td>
+                  <td className="text-xs text-slate-500">{formatDate(e.join_date)}</td>
                 </tr>
               ))}
             </tbody>
@@ -169,10 +183,11 @@ export default function EmployeesPage() {
         {!loading && total > 0 && (
           <div className="flex items-center justify-between p-4 border-t border-slate-100 text-sm">
             <div className="text-slate-600">
-              Page {page} of {pages} — Showing {employees.length} of {total.toLocaleString()}
+              Showing <span className="font-semibold">{(page - 1) * PAGE_SIZE + 1}</span>–<span className="font-semibold">{Math.min(page * PAGE_SIZE, total)}</span> of <span className="font-semibold">{total.toLocaleString()}</span>
             </div>
             <div className="flex gap-2">
               <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+              <span className="px-3 py-1.5 text-xs text-slate-500 font-medium">Page {page} of {pages}</span>
               <button className="btn btn-secondary btn-sm" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>Next →</button>
             </div>
           </div>

@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { Project } from "@/types";
 import { formatDate } from "@/lib/utils";
+import PageHeader from "@/components/PageHeader";
+import { LoadingSpinner, EmptyState } from "@/components/Loading";
+import { FolderIcon } from "@/components/Sidebar";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -13,7 +16,7 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeOnly, setActiveOnly] = useState(false);
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 12;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -37,10 +40,11 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-5 fade-in">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
-        <p className="text-sm text-slate-600 mt-1">{total} projects</p>
-      </header>
+      <PageHeader
+        title="Projects"
+        description={`${total} projects`}
+        badge={<span className="badge badge-info badge-dot">Project Mapping</span>}
+      />
 
       <div className="card flex flex-wrap gap-3 items-center">
         <input
@@ -49,52 +53,63 @@ export default function ProjectsPage() {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={activeOnly} onChange={(e) => { setActiveOnly(e.target.checked); setPage(1); }} />
+        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={activeOnly}
+            onChange={(e) => { setActiveOnly(e.target.checked); setPage(1); }}
+            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+          />
           Active only
         </label>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading && (
-          <div className="col-span-full text-center py-12 text-slate-500"><span className="spinner mr-2" />Loading projects...</div>
-        )}
-        {!loading && projects.map((p) => (
-          <div key={p.id} className="card hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <h3 className="font-semibold text-slate-900">{p.name}</h3>
-                <div className="text-xs font-mono text-slate-500">{p.code}</div>
+      {loading ? (
+        <LoadingSpinner label="Loading projects..." />
+      ) : projects.length === 0 ? (
+        <EmptyState icon="📁" title="No projects found" description="Try adjusting your search or filters." />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {projects.map((p) => (
+            <div key={p.id} className="card card-hover group cursor-pointer">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform">
+                    <FolderIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{p.name}</h3>
+                    <div className="text-[11px] font-mono text-slate-500 mt-0.5">{p.code}</div>
+                  </div>
+                </div>
+                <span className={`badge ${p.is_active ? "badge-success badge-dot" : "badge-muted"}`}>
+                  {p.is_active ? "Active" : "Inactive"}
+                </span>
               </div>
-              <span className={`badge ${p.is_active ? "badge-success" : "badge-muted"}`}>
-                {p.is_active ? "Active" : "Inactive"}
-              </span>
+              <p className="text-sm text-slate-600 line-clamp-2 min-h-[40px] mb-4">{p.description || "No description"}</p>
+
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Manager</div>
+                  <div className="text-sm font-medium text-slate-800 mt-0.5">{p.manager_name || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Team Size</div>
+                  <div className="text-sm font-bold text-indigo-600 mt-0.5">{p.employee_count ?? 0} {p.employee_count === 1 ? "person" : "people"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Start</div>
+                  <div className="text-xs text-slate-600 mt-0.5">{formatDate(p.start_date)}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">End</div>
+                  <div className="text-xs text-slate-600 mt-0.5">{formatDate(p.end_date)}</div>
+                </div>
+              </div>
             </div>
-            <p className="text-sm text-slate-600 line-clamp-2 min-h-[40px]">{p.description || "No description"}</p>
-            <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
-              <div>
-                <div className="text-slate-400 uppercase font-semibold text-[10px]">Manager</div>
-                <div className="font-medium">{p.manager_name || "—"}</div>
-              </div>
-              <div>
-                <div className="text-slate-400 uppercase font-semibold text-[10px]">Employees</div>
-                <div className="font-medium">{p.employee_count ?? 0}</div>
-              </div>
-              <div>
-                <div className="text-slate-400 uppercase font-semibold text-[10px]">Start</div>
-                <div className="font-medium">{formatDate(p.start_date)}</div>
-              </div>
-              <div>
-                <div className="text-slate-400 uppercase font-semibold text-[10px]">End</div>
-                <div className="font-medium">{formatDate(p.end_date)}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-        {!loading && projects.length === 0 && (
-          <div className="col-span-full text-center py-12 text-slate-500">No projects found.</div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {!loading && total > 0 && (
         <div className="flex items-center justify-between text-sm">
