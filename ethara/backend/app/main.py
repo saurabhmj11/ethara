@@ -86,3 +86,25 @@ def seed_database_route(background_tasks: BackgroundTasks):
     background_tasks.add_task(run_seed)
     return {"message": "Database seed started in the background! Please wait about 30-45 seconds for it to finish."}
 
+
+@app.get("/api/seed-debug", tags=["Admin"])
+def seed_debug_route():
+    import traceback
+    from scripts.seed_db import reset_database, seed_projects, seed_floors_bays_seats, seed_employees, seed_activity_logs
+    from app.core.database import SessionLocal
+    
+    try:
+        reset_database()
+        db = SessionLocal()
+        try:
+            # Tiny seed to test permissions and logic
+            projects = seed_projects(db, 2)
+            floors, bays, seats = seed_floors_bays_seats(db, 1, 1, 5)
+            employees = seed_employees(db, projects, seats, 10)
+            seed_activity_logs(db, employees, seats)
+            return {"status": "success", "message": "Debug seed completed successfully"}
+        finally:
+            db.close()
+    except Exception as e:
+        return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
+
