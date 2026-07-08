@@ -238,9 +238,58 @@ The browser could not reach `http://localhost:8000` because that URL only exists
 
 ---
 
+## Issue 11: Employee search/filter endpoints returning HTTP 500
+
+**Symptom:** The audit script flagged that several employee filter endpoints returned HTTP 500:
+```
+GET /api/v1/employees?search=john           → 500
+GET /api/v1/employees?status=ACTIVE         → 500
+GET /api/v1/employees?has_seat=false        → 500
+```
+
+**Root cause:** Backend logs showed:
+```
+pydantic_core._pydantic_core.ValidationError: 1 validation error for EmployeeOut
+email
+  value is not a valid email address: An email address cannot have two periods
+  in a row. [type=value_error, input_value='dr..john.collier@ethara.com', ...]
+```
+
+The seed script generated email addresses from `fake.name()` results that included prefixes like "Mr.", "Mrs.", "Dr." and suffixes like "Jr.", "MD", "PhD". Lowercasing and replacing spaces with dots produced invalid emails:
+- `Dr. John Collier` → `dr..john.collier@ethara.com` (double dot)
+- `Mr. Anthony Adams Jr.` → `mr..anthony.adams.jr.@ethara.com` (double dot + trailing dot)
+
+Pydantic's `EmailStr` validator rejected these when serializing the response, causing a 500.
+
+Out of 5,000 seeded employees, 98 had invalid email addresses.
+
+**Fix:** Updated `backend/scripts/seed_db.py` to strip leading titles and trailing suffixes from the name before generating the email, and to collapse any accidental double dots:
+```python
+name_for_email = re.sub(r"^(Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.)\s+", "", full_name)
+name_for_email = re.sub(r",?\s+(Jr\.|Sr\.|II|III|IV|MD|PhD|DDS)$", "", name_for_email)
+base = name_for_email.lower().replace(" ", ".")
+base = re.sub(r"\.+", ".", base).strip(".")
+```
+
+After re-seeding with `python -m scripts.seed_db --reset`, all 5,000 employee emails are valid and all filter endpoints return 200.
+
+**Files affected:** `backend/scripts/seed_db.py` (added `import re` and the regex sanitization)
+
+**Validation:** Re-ran the audit:
+```
+HTTP 200  total=151    /api/v1/employees?search=john
+HTTP 200  total=4750   /api/v1/employees?status=ACTIVE
+HTTP 200  total=326    /api/v1/employees?department=Engineering
+HTTP 200  total=84     /api/v1/employees?project_id=1
+HTTP 200  total=154    /api/v1/employees?floor_id=1
+HTTP 200  total=4376   /api/v1/employees?has_seat=false
+```
+
+---
+
 ## Summary
 
-All 10 issues were caught during development (not in production) via:
+All 11 issues were caught during development (not in production) via:
 - TypeScript strict-mode build checks (`npm run build`)
 - Python smoke test script (`scripts/test_endpoints.py`)
 - Manual browser testing of each frontend page
