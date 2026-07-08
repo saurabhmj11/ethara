@@ -2,9 +2,6 @@
   base = "ethara/frontend"
   command = "npm run build"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
-
 [build.environment]
-  BACKEND_URL = "https://ethara-backend-6ens.onrender.com"
   NODE_VERSION = "20"
+  BACKEND_URL = "https://ethara-backend-6ens.onrender.com"
