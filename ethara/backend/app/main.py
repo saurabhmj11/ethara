@@ -62,7 +62,7 @@ def root():
 def health():
     return {"status": "healthy"}
 
-@app.post("/api/seed-database", tags=["Admin"])
+@app.api_route("/api/seed-database", methods=["GET", "POST"], tags=["Admin"])
 def seed_database_route(background_tasks: BackgroundTasks):
     def run_seed():
         from scripts.seed_db import seed_projects, seed_floors_bays_seats, seed_employees, seed_activity_logs
