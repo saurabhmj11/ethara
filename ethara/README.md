@@ -2,9 +2,11 @@
 
 A full-stack application that manages seat allocation and project mapping for ~5,000 employees. Built for the **Ethara Software Engineer technical assessment**.
 
-> **Live Demo:** _Add your URLs after deployment (see "Deployment" below)_
+> 🌐 **Live Demo:**
+> - **Frontend:** https://etharasl.netlify.app
+> - **Backend API:** https://ethara-backend-6ens.onrender.com
+> - **Swagger Docs:** https://ethara-backend-6ens.onrender.com/docs
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=YOUR_GITHUB_URL&root-directory=frontend&env=BACKEND_URL&envDescription=URL%20of%20your%20deployed%20FastAPI%20backend)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
 ---
@@ -206,31 +208,35 @@ For a smaller dataset (1,000 employees): `python -m scripts.seed_db --reset --sm
 
 ## 🚢 Deployment
 
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for full deployment instructions. Quick version:
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for full deployment instructions.
+
+### ✅ Live Deployment URLs
+
+| Service | URL |
+|---------|-----|
+| 🖥️ Frontend (Netlify) | https://etharasl.netlify.app |
+| ⚙️ Backend API (Render) | https://ethara-backend-6ens.onrender.com |
+| 📖 Swagger / API Docs | https://ethara-backend-6ens.onrender.com/docs |
+| 🗄️ Database | PostgreSQL on Render (Free tier) |
 
 ### Backend → Render (uses `render.yaml`)
 
 1. Push this repo to GitHub.
 2. Go to https://render.com/deploy and connect your repo (or click "New Blueprint" and select the repo).
-3. Render reads `render.yaml` and provisions:
+3. Render reads `render.yaml` and auto-provisions:
    - A PostgreSQL database (`ethara-db`)
    - A Python web service (`ethara-backend`)
-4. After first deploy, set `DATABASE_URL` (Render provides this automatically via the blueprint) and seed the DB:
-   ```bash
-   cd backend && source venv/bin/activate
-   DATABASE_URL="<from Render dashboard>" python -m scripts.seed_db --reset
-   ```
+4. `DATABASE_URL` is injected automatically via the blueprint — no manual steps needed.
+5. To seed the database, call the seed endpoint via Swagger:
+   `POST https://ethara-backend-6ens.onrender.com/api/seed-database`
 
-### Frontend → Vercel
+### Frontend → Netlify
 
-1. Go to https://vercel.com/new and import your GitHub repo.
-2. Set **Root Directory** to `frontend`.
-3. Add env var: `BACKEND_URL` = `https://<your-render-app>.onrender.com`
-4. Deploy. Vercel auto-detects Next.js from `vercel.json`.
-
-### After deployment
-
-Update the live URLs at the top of this README with your Vercel + Render URLs.
+1. Push this repo to GitHub.
+2. Go to https://app.netlify.com and import your GitHub repo.
+3. Netlify reads `netlify.toml` at the repo root — no manual settings needed.
+4. Add env var in Netlify Dashboard: `NEXT_PUBLIC_API_URL` = `https://ethara-backend-6ens.onrender.com`
+5. Deploy. Netlify builds a static Next.js export and serves it globally.
 
 ---
 
@@ -262,14 +268,14 @@ This hits every endpoint with sample requests and verifies responses. All 24 end
 
 | Deliverable | Status |
 |-------------|--------|
-| GitHub Repository URL | ⚠️ Push to your GitHub account |
-| Live Frontend URL | ⚠️ Deploy to Vercel |
-| Live Backend URL | ⚠️ Deploy to Render |
+| GitHub Repository URL | ✅ https://github.com/saurabhmj11/ethara |
+| Live Frontend URL | ✅ https://etharasl.netlify.app |
+| Live Backend URL | ✅ https://ethara-backend-6ens.onrender.com |
+| Swagger / API Docs URL | ✅ https://ethara-backend-6ens.onrender.com/docs |
 | README.md | ✅ |
 | AI_PROMPTS.md | ✅ |
 | Database Schema | ✅ `docs/DATABASE_SCHEMA.md` |
 | Seed Data | ✅ `backend/scripts/seed_db.py` |
-| API Documentation / Swagger URL | ✅ `/docs` endpoint (becomes live URL after deploy) |
 | Screenshots | ✅ 8 PNGs in `screenshots/` |
 | Deployment Notes | ✅ `docs/DEPLOYMENT.md` |
 | Debugging Notes | ✅ `docs/DEBUGGING_NOTES.md` |
