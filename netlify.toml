@@ -1,7 +1,8 @@
 [build]
   base = "ethara/frontend"
   command = "npm run build"
+  publish = "out"
 
 [build.environment]
   NODE_VERSION = "20"
-  BACKEND_URL = "https://ethara-backend-6ens.onrender.com"
+  NEXT_PUBLIC_API_URL = "https://ethara-backend-6ens.onrender.com"
