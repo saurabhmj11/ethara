@@ -1,7 +1,27 @@
-"""AI Assistant service - hybrid rule-based intent detection + LLM via z-ai CLI."""
+"""AI Assistant service.
+
+Architecture
+------------
+Hybrid design with two layers:
+
+1. Rule-based intent detection (regex patterns) classifies the user's query
+   into one of 9 intents, then runs the appropriate SQLAlchemy query to
+   fetch structured data from the database.
+
+2. Natural-language generation (NLG) — produces a human-readable answer
+   from the structured data using one of these strategies, in order:
+
+   a) LLM call (if available): the `z-ai` CLI is invoked via subprocess
+      to refine the templated answer. Falls through silently on any error.
+   b) Template-based fallback: deterministic natural-language generation
+      driven by per-intent templates. ALWAYS works — no external deps.
+
+This means the AI Assistant returns a real natural-language answer in every
+deployment environment, whether or not an LLM is reachable.
+"""
 from __future__ import annotations
-import re
 import json
+import re
 import subprocess
 import time
 from typing import Optional
@@ -15,50 +35,54 @@ from app.models import (
 from app.services import crud
 
 
-# ---------- Intent detection ----------
+# ============================================================
+# Intent detection
+# ============================================================
 INTENT_KEYWORDS = {
     "available_seats": [
         r"empty seat", r"available seat", r"free seat", r"vacant seat",
         r"open seat", r"how many seat.*available", r"seat.*free",
+        r"unoccupied seat", r"how many.*free",
     ],
     "occupied_seats": [
         r"occupied seat", r"how many.*occupied", r"used seat",
+        r"seat.*taken",
     ],
     "new_joiners": [
         r"new joiner", r"new hire", r"onboarding", r"on-boarding",
         r"recent.*join", r"new employee", r"new joiners without seat",
+        r"new joiner.*no seat", r"who.*onboarding",
     ],
     "floor_utilization": [
         r"floor.*util", r"utilization.*floor", r"floor.*occupancy",
         r"which floor.*empty", r"which floor.*full", r"floor.*available",
+        r"floor.*stats",
     ],
     "project_employees": [
         r"who.*project", r"employee.*project", r"project.*member",
-        r"team.*project", r"people.*project",
+        r"team.*project", r"people.*project", r"how many.*in.*project",
+        r"project.*size",
     ],
     "employee_seat": [
         r"where.*sit", r"seat of", r"seat for", r"find.*employee.*seat",
-        r"locate.*employee", r"where.*employee",
+        r"locate.*employee", r"where.*employee", r"which seat.*employee",
     ],
     "total_stats": [
         r"how many employee", r"total employee", r"overall stat",
-        r"summary", r"overview", r"dashboard",
+        r"summary", r"overview", r"dashboard", r"big picture",
     ],
     "project_distribution": [
         r"project distribution", r"project.*count", r"employee.*per project",
-        r"project.*size",
     ],
     "department_distribution": [
         r"department.*count", r"department.*employee", r"by department",
-        r"department.*size",
+        r"department.*size", r"department.*breakdown",
     ],
 }
 
 
 def detect_intent(query: str) -> str:
-    """Return one of the INTENT_KEYWORDS keys or 'unknown'."""
     q = query.lower()
-    # Check in priority order
     priority = [
         "available_seats", "occupied_seats", "new_joiners",
         "floor_utilization", "project_employees", "employee_seat",
@@ -71,10 +95,10 @@ def detect_intent(query: str) -> str:
     return "unknown"
 
 
-# ---------- Data fetchers (one per intent) ----------
+# ============================================================
+# Data fetchers (one per intent)
+# ============================================================
 def fetch_available_seats(db: Session, query: str) -> dict:
-    """Find available seats, optionally filtered by floor/bay mentioned in the query."""
-    # Try to extract a floor name like "Floor 1" or "Floor 3"
     m = re.search(r"floor\s*(\d+|[a-zA-Z]+)", query, re.IGNORECASE)
     floor_filter = None
     if m:
@@ -102,6 +126,7 @@ def fetch_available_seats(db: Session, query: str) -> dict:
         "intent": "available_seats",
         "total_available": total,
         "floor_filter": floor_filter,
+        "floor_filter_name": next((f.name for f in db.query(Floor).all() if f.id == floor_filter), None) if floor_filter else None,
         "sample_seats": [s.seat_number for s in seats[:20]],
         "by_floor_sample": {k: v[:5] for k, v in list(by_floor.items())[:5]},
     }
@@ -155,8 +180,6 @@ def fetch_floor_utilization(db: Session) -> dict:
 
 
 def fetch_project_employees(db: Session, query: str) -> dict:
-    """Find employees on a specific project mentioned in the query."""
-    # Try to extract project name/code
     projects = db.query(Project).all()
     matched_project = None
     q_lower = query.lower()
@@ -165,7 +188,6 @@ def fetch_project_employees(db: Session, query: str) -> dict:
             matched_project = p
             break
     if not matched_project:
-        # Return top 10 projects by employee count
         return {
             "intent": "project_employees",
             "matched_project": None,
@@ -206,8 +228,6 @@ def fetch_project_employees(db: Session, query: str) -> dict:
 
 
 def fetch_employee_seat(db: Session, query: str) -> dict:
-    """Find the seat of an employee by name or emp_code mentioned in the query."""
-    # Extract potential name (very crude)
     employees = db.query(Employee).all()
     q_lower = query.lower()
     matched = None
@@ -258,62 +278,256 @@ def fetch_department_distribution(db: Session) -> dict:
     return {"intent": "department_distribution", "departments": crud.get_department_distribution(db)}
 
 
-# ---------- LLM call via z-ai CLI ----------
-def call_llm(system_prompt: str, user_prompt: str, max_retries: int = 2) -> str:
-    """Call the z-ai CLI to get an LLM response. Falls back to a stub if CLI is unavailable."""
-    cmd = ["z-ai", "chat", "--prompt", user_prompt, "--system", system_prompt, "-o", "/tmp/zai_resp.json"]
-    last_err = None
-    for attempt in range(max_retries + 1):
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=45, check=False,
+# ============================================================
+# Template-based natural-language generation (always works)
+# ============================================================
+def _format_int(n: int) -> str:
+    return f"{n:,}"
+
+
+def _list_sample(items: list, max_n: int = 5) -> str:
+    """Format a sample list like 'a, b, c, d, e'."""
+    if not items:
+        return ""
+    sample = items[:max_n]
+    return ", ".join(str(s) for s in sample) + (f" and {len(items) - max_n} more" if len(items) > max_n else "")
+
+
+def generate_answer_template(query: str, data: dict) -> str:
+    """Deterministic natural-language answer from structured data.
+
+    This is the fallback when no LLM is available — it always produces a
+    real natural-language response tailored to the intent.
+    """
+    intent = data.get("intent", "unknown")
+
+    if intent == "available_seats":
+        total = data.get("total_available", 0)
+        floor_name = data.get("floor_filter_name")
+        sample = data.get("sample_seats", [])
+        by_floor = data.get("by_floor_sample", {})
+
+        if total == 0:
+            return "There are currently no available seats. All seats are either occupied, reserved, or under maintenance."
+
+        scope = f" on {floor_name}" if floor_name else ""
+        lines = [f"There are **{_format_int(total)} available seats**{scope} right now."]
+        if by_floor:
+            floor_summary = "; ".join(
+                f"{fname}: {len(seats)} seats" for fname, seats in by_floor.items()
             )
-            if result.returncode == 0:
-                try:
-                    with open("/tmp/zai_resp.json") as f:
-                        data = json.load(f)
-                    # The CLI saves the completion in a JSON structure
-                    if isinstance(data, dict):
-                        # Try common keys
-                        return (
-                            data.get("content")
-                            or data.get("response")
-                            or data.get("choices", [{}])[0].get("message", {}).get("content")
-                            or str(data)
-                        )
-                    return str(data)
-                except Exception:
-                    # Fall back to stdout
-                    return result.stdout.strip() or "Could not parse LLM response."
-            else:
-                last_err = result.stderr or result.stdout
-        except subprocess.TimeoutExpired:
-            last_err = "LLM call timed out"
-        except FileNotFoundError:
-            last_err = "z-ai CLI not installed"
-        except Exception as e:
-            last_err = str(e)
-    # Fallback: produce a deterministic response without LLM
-    return f"[LLM unavailable ({last_err})] Could not generate a natural language response."
+            lines.append(f"Breakdown by floor — {floor_summary}.")
+        if sample:
+            lines.append(f"Sample seat numbers: {_list_sample(sample)}.")
+        lines.append("You can allocate any of these to a new joiner via the New Joiners page or the Seat Map.")
+        return " ".join(lines)
+
+    if intent == "occupied_seats":
+        occ = data.get("occupied_seats", 0)
+        total = data.get("total_seats", 0)
+        pct = data.get("occupancy_pct", 0)
+        return (
+            f"Currently **{_format_int(occ)} of {_format_int(total)} seats are occupied** ({pct}% occupancy). "
+            f"That leaves {_format_int(total - occ)} seats available for new allocations."
+        )
+
+    if intent == "new_joiners":
+        total = data.get("total_new_joiners", 0)
+        without = data.get("without_seat", 0)
+        sample = data.get("sample_new_joiners", [])
+        if total == 0:
+            return "There are no employees currently in the ONBOARDING status — everyone has been onboarded."
+        lines = [f"There are **{_format_int(total)} new joiners** in the onboarding status."]
+        if without > 0:
+            lines.append(f"Of those, **{without} do not yet have a seat assigned**.")
+        if sample:
+            sample_str = "; ".join(
+                f"{s['name']} ({s['emp_code']}, {s.get('department', '—')})"
+                for s in sample[:5]
+            )
+            lines.append(f"Recent new joiners: {sample_str}.")
+        lines.append("Head to the New Joiners page to auto-allocate seats to them.")
+        return " ".join(lines)
+
+    if intent == "floor_utilization":
+        floors = data.get("floors", [])
+        if not floors:
+            return "No floor data available."
+        lines = ["Here's the floor-wise utilization:"]
+        for f in floors:
+            lines.append(
+                f"• **{f['floor_name']}**: {f['occupied']} of {f['total']} seats occupied "
+                f"({f['utilization_pct']}% utilization, {f['available']} available)"
+            )
+        busiest = max(floors, key=lambda x: x["utilization_pct"])
+        emptiest = min(floors, key=lambda x: x["utilization_pct"])
+        lines.append(
+            f"The busiest floor is **{busiest['floor_name']}** at {busiest['utilization_pct']}%, "
+            f"and the most available seats are on **{emptiest['floor_name']}** ({emptiest['available']} free)."
+        )
+        return "\n".join(lines)
+
+    if intent == "project_employees":
+        proj = data.get("matched_project")
+        if not proj:
+            top = data.get("top_projects", [])
+            if not top:
+                return "I couldn't identify a specific project in your query, and there are no projects in the database."
+            lines = ["I couldn't identify a specific project in your query. Here are the top projects by team size:"]
+            for p in top[:5]:
+                lines.append(f"• **{p['project_name']}** ({p['project_code']}): {p['employee_count']} employees")
+            lines.append("Try asking again with a project name, e.g., \"How many employees are in project Atlas?\"")
+            return "\n".join(lines)
+        total = data.get("total_employees", 0)
+        sample = data.get("sample_employees", [])
+        manager = proj.get("manager")
+        lines = [
+            f"Project **{proj['name']}** ({proj['code']}) has **{_format_int(total)} employees** assigned."
+        ]
+        if manager:
+            lines.append(f"It's managed by {manager}.")
+        if sample:
+            names = "; ".join(f"{s['name']} ({s['emp_code']})" for s in sample[:5])
+            lines.append(f"Team members include: {names}.")
+        return " ".join(lines)
+
+    if intent == "employee_seat":
+        emp = data.get("matched_employee")
+        if not emp:
+            return (
+                "I couldn't identify the employee from your query. "
+                "Please include their full name (e.g., \"Where does Jane Smith sit?\") "
+                "or employee code (e.g., \"Where does ETH0001 sit?\")."
+            )
+        seat = data.get("seat")
+        if not seat:
+            return (
+                f"**{emp['name']}** ({emp['emp_code']}, {emp.get('department', '—')}) "
+                f"does not currently have a seat assigned. They may be a new joiner awaiting allocation, "
+                f"or a remote/hot-desk employee."
+            )
+        return (
+            f"**{emp['name']}** ({emp['emp_code']}, {emp.get('designation', '—')}, "
+            f"{emp.get('department', '—')}) sits at seat **{seat['seat_number']}** "
+            f"in {seat.get('bay', '—')} on {seat.get('floor', '—')}. "
+            f"Current seat status: {seat.get('status', '—')}."
+        )
+
+    if intent == "total_stats":
+        s = data.get("stats", {})
+        return (
+            f"Here's the overall picture at Ethara:\n"
+            f"• **{_format_int(s.get('total_employees', 0))} employees** total "
+            f"({_format_int(s.get('active_employees', 0))} active, {s.get('new_joiners', 0)} new joiners)\n"
+            f"• **{_format_int(s.get('total_seats', 0))} seats** — {s.get('occupied_seats', 0)} occupied, "
+            f"{s.get('available_seats', 0)} available, {s.get('reserved_seats', 0)} reserved, "
+            f"{s.get('maintenance_seats', 0)} under maintenance\n"
+            f"• **{s.get('utilization_pct', 0)}% seat utilization** across {s.get('total_floors', 0)} floors "
+            f"and {s.get('total_bays', 0)} bays\n"
+            f"• **{s.get('total_projects', 0)} projects** ({s.get('active_projects', 0)} currently active)"
+        )
+
+    if intent == "project_distribution":
+        projects = data.get("projects", [])
+        if not projects:
+            return "No project distribution data available."
+        lines = ["Here's how employees are distributed across the top projects:"]
+        for p in projects[:10]:
+            lines.append(f"• **{p['project_name']}** ({p['project_code']}): {p['employee_count']} employees")
+        total = sum(p["employee_count"] for p in projects)
+        lines.append(f"These top {len(projects)} projects account for {_format_int(total)} employee assignments.")
+        return "\n".join(lines)
+
+    if intent == "department_distribution":
+        depts = data.get("departments", [])
+        if not depts:
+            return "No department distribution data available."
+        lines = ["Here's the headcount breakdown by department:"]
+        for d in depts[:10]:
+            lines.append(f"• **{d['department']}**: {d['employee_count']} employees")
+        return "\n".join(lines)
+
+    return (
+        "I'm not sure how to help with that. Try asking about:\n"
+        "• Available seats (e.g., \"How many available seats on Floor 2?\")\n"
+        "• New joiners (e.g., \"Show me all new joiners without a seat\")\n"
+        "• Floor utilization (e.g., \"What is the floor-wise utilization?\")\n"
+        "• Project members (e.g., \"How many employees in project Atlas?\")\n"
+        "• Employee location (e.g., \"Where does ETH0001 sit?\")\n"
+        "• Overall summary (e.g., \"Give me an overview\")"
+    )
 
 
-SYSTEM_PROMPT = """You are the AI Assistant for the Ethara Seat Allocation & Project Mapping System.
-You help HR, Admin, and Project teams query employee seating, project assignments, seat availability, and utilization metrics.
+# ============================================================
+# LLM refinement (optional, best-effort)
+# ============================================================
+def _try_llm_refine(query: str, data: dict, template_answer: str) -> Optional[str]:
+    """Attempt to refine the templated answer via the z-ai CLI.
 
-Given a user's question and structured data fetched from the database, write a clear, concise, friendly natural-language answer.
-- If numbers are provided, use them.
-- If sample lists are provided, mention them but don't dump everything — highlight 3-5 examples.
-- If a filter was applied (e.g. specific floor or project), acknowledge it.
-- If no data was found, say so clearly.
-- Be specific and useful. Avoid filler.
-"""
+    Returns the refined answer on success, or None on any failure
+    (CLI missing, timeout, parse error, etc.). The caller uses the
+    template_answer as fallback.
+    """
+    system_prompt = (
+        "You are the AI Assistant for the Ethara Seat Allocation System. "
+        "Refine the given draft answer into polished, friendly natural language. "
+        "Keep all numbers and facts exactly as given. Do not invent new data. "
+        "Be concise."
+    )
+    user_prompt = (
+        f"USER QUESTION: {query}\n\n"
+        f"DETECTED INTENT: {data.get('intent')}\n\n"
+        f"FETCHED DATA (JSON):\n{json.dumps(data, default=str, indent=2)}\n\n"
+        f"DRAFT ANSWER:\n{template_answer}\n\n"
+        f"Refine the draft answer. Keep it under 4 sentences."
+    )
+
+    try:
+        result = subprocess.run(
+            ["z-ai", "chat", "--prompt", user_prompt, "--system", system_prompt, "-o", "/tmp/zai_resp.json"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+        if result.returncode != 0:
+            return None
+        try:
+            with open("/tmp/zai_resp.json") as f:
+                resp = json.load(f)
+            if isinstance(resp, dict):
+                content = (
+                    resp.get("content")
+                    or resp.get("response")
+                    or (resp.get("choices", [{}])[0].get("message", {}).get("content") if resp.get("choices") else None)
+                )
+                if content and isinstance(content, str) and len(content.strip()) > 10:
+                    return content.strip()
+        except Exception:
+            pass
+        # Fall back to stdout
+        if result.stdout and len(result.stdout.strip()) > 10:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+    return None
 
 
-def answer_query(db: Session, query: str) -> dict:
-    """Main entry: detect intent → fetch data → call LLM → return response."""
+# ============================================================
+# Public entry point
+# ============================================================
+def answer_query(db: Session, query: str, use_llm: bool = True) -> dict:
+    """Main entry: detect intent → fetch data → generate answer.
+
+    Args:
+        db: SQLAlchemy session
+        query: user's natural-language question
+        use_llm: if True (default), try to refine via LLM. The template
+                 answer is always produced first as a guaranteed fallback.
+
+    Returns dict with: query, answer, data, intent, sql, elapsed_ms, llm_used.
+    """
     start = time.time()
     intent = detect_intent(query)
-    # Fetch structured data
+
+    # Fetch structured data based on intent
     if intent == "available_seats":
         data = fetch_available_seats(db, query)
     elif intent == "occupied_seats":
@@ -333,19 +547,21 @@ def answer_query(db: Session, query: str) -> dict:
     elif intent == "total_stats":
         data = fetch_total_stats(db)
     else:
-        data = {"intent": "unknown", "message": "I couldn't classify your query. Try asking about: available seats, occupied seats, new joiners, floor utilization, project members, or where an employee sits."}
+        data = {
+            "intent": "unknown",
+            "message": "I couldn't classify your query.",
+        }
 
-    # Generate natural-language answer
-    user_prompt = f"""USER QUESTION: {query}
+    # Step 1: Always produce a template-based natural-language answer
+    answer = generate_answer_template(query, data)
+    llm_used = False
 
-DETECTED INTENT: {intent}
-
-FETCHED DATA (JSON):
-{json.dumps(data, default=str, indent=2)}
-
-Write a concise, friendly answer to the user's question based on this data. If the data doesn't fully answer the question, say so.
-"""
-    answer = call_llm(SYSTEM_PROMPT, user_prompt)
+    # Step 2: Optionally refine via LLM (best-effort)
+    if use_llm and intent != "unknown":
+        refined = _try_llm_refine(query, data, answer)
+        if refined:
+            answer = refined
+            llm_used = True
 
     elapsed_ms = int((time.time() - start) * 1000)
     return {
@@ -355,4 +571,5 @@ Write a concise, friendly answer to the user's question based on this data. If t
         "intent": intent,
         "sql": None,
         "elapsed_ms": elapsed_ms,
+        "llm_used": llm_used,
     }
