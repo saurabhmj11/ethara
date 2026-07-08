@@ -53,7 +53,7 @@ export default function Sidebar() {
 
       <div className="p-3 border-t border-slate-700">
         <a
-          href="http://localhost:8000/docs"
+          href="/docs"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"

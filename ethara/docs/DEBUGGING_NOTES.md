@@ -210,9 +210,37 @@ import type {
 
 ---
 
+## Issue 10: "Failed to fetch" TypeError in browser console (preview environment)
+
+**Symptom:**
+```
+Console TypeError: Failed to fetch
+    at fetchJson (...)
+    at Object.listEmployees (...)
+    ...
+```
+
+The browser could not reach `http://localhost:8000` because that URL only exists in the sandbox where the FastAPI backend runs — not on the user's machine where the browser is executing JavaScript.
+
+**Root cause:** The frontend's API client was using `NEXT_PUBLIC_API_URL || "http://localhost:8000"` as the base for fetch calls. In a preview environment (e.g., `https://preview-<bot-id>.space-z.ai/`), the browser is on the user's machine and only has access to the Next.js dev server via the preview proxy. It does NOT have direct access to port 8000 on the sandbox.
+
+**Fix:** Switch the frontend to use **relative URLs** (`/api/v1/...`) and configure Next.js to proxy those requests to the backend server-side via `rewrites()` in `next.config.ts`. The Next.js server (running in the sandbox) makes the request to `http://localhost:8000` on behalf of the browser, then returns the response.
+
+**Files affected:**
+- `frontend/src/lib/api.ts` — changed default `API_BASE` from `"http://localhost:8000"` to `""` (relative)
+- `frontend/next.config.ts` — added `rewrites()` to proxy `/api/:path*` → `${BACKEND_URL}/api/:path*`
+- `frontend/src/components/Sidebar.tsx` — changed Swagger link from absolute URL to relative `/docs`
+- `frontend/.env.example` — documented new `BACKEND_URL` env var and updated `NEXT_PUBLIC_API_URL` usage
+
+**Validation:** Restarted the Next.js dev server (config changes require restart). Tested `curl http://localhost:3000/api/v1/dashboard/stats` — returned the expected JSON from the backend. Tested `curl http://localhost:3000/docs` — returned the Swagger UI HTML (200 OK).
+
+**Production note:** In production on Vercel, set `BACKEND_URL=https://<your-backend>.onrender.com` so the server-side proxy can reach the backend. The browser only ever sees relative URLs, so no CORS configuration is needed (though the backend still allows `*` as a fallback).
+
+---
+
 ## Summary
 
-All 9 issues were caught during development (not in production) via:
+All 10 issues were caught during development (not in production) via:
 - TypeScript strict-mode build checks (`npm run build`)
 - Python smoke test script (`scripts/test_endpoints.py`)
 - Manual browser testing of each frontend page

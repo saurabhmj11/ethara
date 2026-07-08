@@ -1,6 +1,14 @@
 /**
  * API client for the Ethara backend.
- * Backend base URL is configured via NEXT_PUBLIC_API_URL.
+ *
+ * Uses a RELATIVE base URL ("/api/v1") so the browser requests go to the
+ * Next.js dev server, which proxies them to the FastAPI backend via the
+ * rewrites defined in next.config.ts. This avoids CORS issues and works
+ * in preview environments where the backend isn't directly reachable
+ * from the user's browser.
+ *
+ * For server-side rendering (RSC / route handlers), you can override
+ * the base URL with NEXT_PUBLIC_API_URL (e.g., http://localhost:8000).
  */
 import type {
   Project, Floor, Bay, Seat, Employee,
@@ -8,7 +16,10 @@ import type {
   DepartmentDistribution, ActivityLog, PaginatedResponse, AIResponse,
 } from "@/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use relative URL by default so requests go through the Next.js proxy.
+// Override with NEXT_PUBLIC_API_URL only when you want to bypass the proxy
+// (e.g., in production where the backend is on a separate domain).
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API_PREFIX = "/api/v1";
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {

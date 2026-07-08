@@ -54,9 +54,10 @@ This document describes how to deploy the Ethara Seat Allocation & Project Mappi
    - **Build Command:** `npm run build` (default)
    - **Output Directory:** `.next` (default)
 3. Add environment variable:
-   - `NEXT_PUBLIC_API_URL` = `https://<your-backend>.onrender.com` (no trailing slash)
+   - `BACKEND_URL` = `https://<your-backend>.onrender.com` (used by `next.config.ts` rewrites to proxy `/api/*` to your backend)
+   - You do NOT need `NEXT_PUBLIC_API_URL` — the frontend uses relative URLs by default and proxies through Next.js.
 4. Deploy. Vercel will build and give you a URL like `https://ethara-frontend.vercel.app`.
-5. Update the backend's CORS origins to include the Vercel URL (already handled — backend allows `*` for demo, but you should restrict in production by editing `app/core/config.py`).
+5. The backend's CORS already allows `*` for demo. For production, restrict it to your Vercel URL.
 
 ### Step 4: Verify end-to-end
 
@@ -107,7 +108,8 @@ For the frontend, use Vercel as in Option A.
 ### Frontend
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | Yes (prod) | `http://localhost:8000` | Backend base URL (no trailing slash) |
+| `NEXT_PUBLIC_API_URL` | No | `""` (uses proxy) | If set, the browser calls the backend directly at this URL (e.g., `https://ethara-backend.onrender.com`). If empty, the frontend uses relative URLs (`/api/v1/...`) which are proxied server-side via `next.config.ts`. |
+| `BACKEND_URL` | No (dev) / Yes (prod) | `http://localhost:8000` | Used by `next.config.ts` rewrites to know where to proxy `/api/*` requests. In production (Vercel), set this to your backend host so the server-side proxy can reach it. |
 
 ---
 

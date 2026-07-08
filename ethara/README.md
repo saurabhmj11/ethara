@@ -70,6 +70,12 @@ npm run dev
 
 Frontend now available at http://localhost:3000
 
+The frontend uses **relative URLs** (`/api/v1/...`) which are proxied to the
+backend via `next.config.ts` rewrites. This avoids CORS issues and works in
+preview environments where the backend port isn't directly exposed to the
+browser. The proxy destination is controlled by the `BACKEND_URL` env var
+(defaults to `http://localhost:8000`).
+
 ### 3. Or use the launcher script
 
 ```bash
