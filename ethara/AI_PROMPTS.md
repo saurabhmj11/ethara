@@ -349,9 +349,31 @@ judgment in using AI, not just the final code.
 
 ---
 
+### 15 — Production Deployment & Debugging (Netlify + Render)
+- **Date/Time:** 2026-07-08
+- **Tool:** Claude (via Super Z)
+- **Category:** Deployment / Debugging
+- **Prompt used:**
+  ```
+  Now I will deploy frontend on netlify. Help fix the 404 issue. Also, the 
+  Render backend seed script is failing silently in the background, deploy 
+  a debug endpoint to see what's wrong and fix the deployment.
+  ```
+- **Output summary:** AI created a `GET /api/seed-debug` endpoint to catch silent backend errors, which surfaced a CircularDependencyError in SQLAlchemy during `DROP TABLE`. AI also identified that Next.js wasn't building properly on Netlify due to missing static exports and sub-folder configuration. 
+- **Manual fixes applied:** 
+  - Moved `netlify.toml` to the root folder to support monorepo detection.
+  - Configured `next.config.ts` to conditionally use `output: "export"` for production static hosting, avoiding Next.js plugin conflicts on Netlify.
+  - Modified the backend seed endpoint to skip `reset_database()` (DROP TABLE) entirely since the Render production DB was already fresh, preventing the circular dependency crash.
+  - Converted the seed endpoint to accept `GET` requests so it could be easily triggered from the browser.
+- **Validation method:** 
+  - Render deployment succeeded; hitting `/api/seed-database` successfully populated the database in ~30s.
+  - Netlify build succeeded and the live URL rendered perfectly, correctly proxying absolute requests directly to the Render backend.
+
+---
+
 ## Summary
 
-- **Total AI-assisted entries:** 14
+- **Total AI-assisted entries:** 15
 - **Estimated % of codebase AI-generated vs. hand-written:** ~85% AI-generated, ~15% manual fixes and review. All AI output was reviewed and tested before being committed.
 - **Areas where AI was most useful:**
   - Initial scaffolding and architecture planning
