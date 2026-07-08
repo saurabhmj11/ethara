@@ -65,10 +65,9 @@ def health():
 @app.post("/api/seed-database", tags=["Admin"])
 def seed_database_route(background_tasks: BackgroundTasks):
     def run_seed():
-        from scripts.seed_db import reset_database, seed_projects, seed_floors_bays_seats, seed_employees, seed_activity_logs
+        from scripts.seed_db import seed_projects, seed_floors_bays_seats, seed_employees, seed_activity_logs
         from app.core.database import SessionLocal
         
-        reset_database()
         db = SessionLocal()
         try:
             n_emp = settings.SEED_EMPLOYEES
@@ -90,11 +89,10 @@ def seed_database_route(background_tasks: BackgroundTasks):
 @app.get("/api/seed-debug", tags=["Admin"])
 def seed_debug_route():
     import traceback
-    from scripts.seed_db import reset_database, seed_projects, seed_floors_bays_seats, seed_employees, seed_activity_logs
+    from scripts.seed_db import seed_projects, seed_floors_bays_seats, seed_employees, seed_activity_logs
     from app.core.database import SessionLocal
     
     try:
-        reset_database()
         db = SessionLocal()
         try:
             # Tiny seed to test permissions and logic
