@@ -319,12 +319,52 @@ You can allocate any of these to a new joiner via the New Joiners page or the Se
 
 ---
 
+---
+
+## Issue 13: Netlify deployments returning 404 (Page Not Found)
+
+**Symptom:**
+After deploying the frontend to Netlify, loading `https://etharasl.netlify.app` resulted in a generic Netlify 404 page.
+
+**Root cause:**
+The project is a monorepo with the frontend inside a `frontend/` directory. Next.js App Router relies on a specific build output. Netlify initially failed to detect it as a Next.js project because the `netlify.toml` file was placed inside the `frontend/` subdirectory instead of the root directory. Additionally, without `output: "export"`, Netlify requires specific Next.js runtime plugins which caused conflict.
+
+**Fix:**
+1. Moved `netlify.toml` to the root repository folder so Netlify auto-detects the monorepo configuration.
+2. Configured `netlify.toml` with `base = "frontend"` and `publish = "out"`.
+3. Updated `next.config.ts` to conditionally use `output: "export"` when deployed in production (detected via `process.env.NEXT_PUBLIC_API_URL`).
+4. Disabled `rewrites` in `next.config.ts` during static export, as rewrites are not supported in static exports. The frontend now fetches the absolute backend URL directly.
+
+**Files affected:** `netlify.toml` (moved to root), `frontend/next.config.ts`
+
+---
+
+## Issue 14: Render Database Seeding Failure (Circular Dependency)
+
+**Symptom:**
+Hitting the `/api/seed-database` endpoint on Render failed silently in the background. A synchronous `/api/seed-debug` endpoint revealed:
+```
+sqlalchemy.exc.CircularDependencyError: Can't sort tables for DROP; an unresolvable foreign key dependency exists between tables: employees, seats.
+```
+
+**Root cause:**
+The programmatic seed endpoint called `reset_database()`, which executed `Base.metadata.drop_all(bind=engine)`. Because `Employee` has a foreign key to `Seat` (`seat_id`) and `Seat` has a foreign key to `Employee` (`reserved_for_employee_id`), PostgreSQL could not determine a safe table drop order and crashed.
+
+**Fix:**
+1. Since the production database on Render was already fresh and empty, the `DROP TABLE` step was unnecessary.
+2. Modified the seed endpoint to skip `reset_database()` and directly use `Base.metadata.create_all()` and the seeding script.
+3. Updated the endpoint definition from `@app.post` to `@app.api_route(..., methods=["GET", "POST"])` to allow administrators to easily trigger the seed directly from a browser URL without needing Swagger UI or cURL.
+
+**Files affected:** `backend/app/main.py`
+
+---
+
 ## Summary
 
-All 12 issues were caught during development (not in production) via:
+All 14 issues were caught and fixed via:
 - TypeScript strict-mode build checks (`npm run build`)
 - Python smoke test script (`scripts/test_endpoints.py`)
 - Manual browser testing of each frontend page
-- End-to-end screenshot capture via `agent-browser`
+- Production debugging on Netlify and Render platforms
 
-No data loss, no security issues, no production incidents.
+No data loss, no security issues, no unrecoverable production incidents.
