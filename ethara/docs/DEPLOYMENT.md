@@ -6,14 +6,14 @@ This document describes how to deploy the Ethara Seat Allocation & Project Mappi
 
 ```
 ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│   Vercel        │  HTTPS  │   Render /      │  TCP    │   Render /      │
-│   (Frontend)    │ ──────> │   Railway       │ ──────> │   Supabase      │
-│   Next.js       │         │   (Backend)     │         │   (PostgreSQL)  │
-│                 │         │   FastAPI       │         │                 │
+│   Netlify       │  HTTPS  │   Render        │  TCP    │   Render        │
+│   (Frontend)    │ ──────> │   (Backend)     │ ──────> │   (PostgreSQL)  │
+│   Next.js       │         │   FastAPI       │         │                 │
+│                 │         │                 │         │                 │
 └─────────────────┘         └─────────────────┘         └─────────────────┘
 ```
 
-## Option A: Vercel + Render + Render Postgres (Recommended)
+## Option A: Netlify + Render (Used in Production)
 
 ### Step 1: Database (Render Postgres)
 
@@ -27,47 +27,34 @@ This document describes how to deploy the Ethara Seat Allocation & Project Mappi
 
 1. Push the `backend/` directory to a GitHub repo (or the whole `ethara/` repo with `backend/` as a subdirectory).
 2. On Render, create a new **Web Service** connected to your repo:
-   - **Root Directory:** `backend`
-   - **Runtime:** Python 3
-   - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - **Plan:** Free or Starter ($7/mo recommended for always-on)
-3. Add environment variables:
-   - `DATABASE_URL` = `postgresql+psycopg2://...` (from Render Postgres)
-   - `ZAI_API_KEY` = (your z-ai key, optional)
-4. Deploy. Render will install deps and start the server.
-5. Verify: visit `https://<your-backend>.onrender.com/health` — should return `{"status": "healthy"}`.
-6. **Seed the database:** After first deploy, run the seed script locally against the production DB:
-   ```bash
-   cd backend
-   source venv/bin/activate
-   DATABASE_URL="postgresql+psycopg2://..." python -m scripts.seed_db --reset
-   ```
-   (Or set up a one-off Render shell job to run `python -m scripts.seed_db`.)
+3. Render reads `render.yaml` in the repo root and auto-provisions:
+   - A PostgreSQL database (`ethara-db`)
+   - A Python web service (`ethara-backend`)
+4. `DATABASE_URL` is injected automatically via the blueprint — no manual steps needed.
+5. To seed the database, call the seed endpoint:
+   `GET https://ethara-backend-6ens.onrender.com/api/seed-database`
+   (Wait ~30 seconds for background seeding to finish.)
 
-### Step 3: Frontend (Vercel)
+### Step 3: Frontend (Netlify)
 
-1. Push the `frontend/` directory to GitHub (same repo as backend is fine).
-2. On Vercel, create a new project from the repo:
-   - **Root Directory:** `frontend`
-   - **Framework Preset:** Next.js (auto-detected)
-   - **Build Command:** `npm run build` (default)
-   - **Output Directory:** `.next` (default)
-3. Add environment variable:
-   - `BACKEND_URL` = `https://<your-backend>.onrender.com` (used by `next.config.ts` rewrites to proxy `/api/*` to your backend)
-   - You do NOT need `NEXT_PUBLIC_API_URL` — the frontend uses relative URLs by default and proxies through Next.js.
-4. Deploy. Vercel will build and give you a URL like `https://ethara-frontend.vercel.app`.
-5. The backend's CORS already allows `*` for demo. For production, restrict it to your Vercel URL.
+1. Push the repository to GitHub.
+2. On Netlify, import your GitHub repo.
+3. Netlify reads `netlify.toml` at the repo root — no manual settings needed (it sets `base = "frontend"` and `publish = "out"`).
+4. Add environment variable in Netlify Dashboard:
+   - `NEXT_PUBLIC_API_URL` = `https://<your-backend>.onrender.com` 
+     (This tells the frontend to bypass proxy rewrites and use static export pointing directly to the backend).
+5. Deploy. Netlify will build the Next.js app as a static export and host it globally.
+6. The backend's CORS already allows `*` for demo. For production, restrict it to your Netlify URL.
 
 ### Step 4: Verify end-to-end
 
-1. Visit the Vercel URL — dashboard should load with real data.
+1. Visit the Netlify URL — dashboard should load with real data.
 2. Try the AI Assistant with a query like "How many available seats are there?"
 3. Visit `/docs` on the backend URL — Swagger UI should be accessible.
 
 ---
 
-## Option B: Railway (Backend + DB) + Vercel (Frontend)
+## Option B: Railway (Backend + DB) + Netlify (Frontend)
 
 1. Create a Railway project: https://railway.app/new
 2. Add a **PostgreSQL** plugin — Railway gives you a `DATABASE_URL` env var.
@@ -75,7 +62,7 @@ This document describes how to deploy the Ethara Seat Allocation & Project Mappi
    - **Root:** `backend`
    - **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
    - Add env var: `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (Railway interpolates this), but **prepend** `postgresql+psycopg2://` instead of `postgres://`.
-4. Deploy the frontend on Vercel (same as Option A).
+4. Deploy the frontend on Netlify (same as Option A).
 5. Set `NEXT_PUBLIC_API_URL` to the Railway backend URL.
 
 ---
@@ -89,7 +76,7 @@ Fly.io can host both backend and a Postgres instance. See https://fly.io/docs/la
 3. `fly secrets set DATABASE_URL=...`
 4. `fly deploy`
 
-For the frontend, use Vercel as in Option A.
+For the frontend, use Netlify as in Option A.
 
 ---
 
@@ -108,8 +95,8 @@ For the frontend, use Vercel as in Option A.
 ### Frontend
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | No | `""` (uses proxy) | If set, the browser calls the backend directly at this URL (e.g., `https://ethara-backend.onrender.com`). If empty, the frontend uses relative URLs (`/api/v1/...`) which are proxied server-side via `next.config.ts`. |
-| `BACKEND_URL` | No (dev) / Yes (prod) | `http://localhost:8000` | Used by `next.config.ts` rewrites to know where to proxy `/api/*` requests. In production (Vercel), set this to your backend host so the server-side proxy can reach it. |
+| `NEXT_PUBLIC_API_URL` | No | `""` (uses proxy) | If set (like on Netlify), the frontend compiles as a static export and calls the backend directly at this URL (e.g., `https://ethara-backend-6ens.onrender.com`). |
+| `BACKEND_URL` | No (dev) / Yes (prod node) | `http://localhost:8000` | Used by `next.config.ts` rewrites to know where to proxy `/api/*` requests (only if NEXT_PUBLIC_API_URL is NOT set). |
 
 ---
 
@@ -130,7 +117,7 @@ The backend currently allows `*` (all origins) for demo purposes. **For producti
 
 ```python
 BACKEND_CORS_ORIGINS: list[str] = [
-    "https://ethara-frontend.vercel.app",
+    "https://etharasl.netlify.app",
 ]
 ```
 
