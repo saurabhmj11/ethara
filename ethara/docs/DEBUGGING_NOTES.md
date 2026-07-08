@@ -287,9 +287,41 @@ HTTP 200  total=4376   /api/v1/employees?has_seat=false
 
 ---
 
+## Issue 12: AI Assistant returned raw JSON instead of natural language when LLM was unavailable
+
+**Symptom:** Reviewer flagged that the AI Assistant endpoint returned:
+```
+"[LLM unavailable (z-ai CLI not installed)] Could not generate a natural language response."
+```
+instead of a real natural-language answer. This happened because the original implementation relied entirely on the `z-ai` CLI for natural-language generation — when the CLI isn't installed (which is the case on Render/Vercel production unless explicitly added to the build step), the assistant fell back to returning raw structured data.
+
+**Root cause:** The original `call_llm()` function was the only path to natural-language output. When it failed, there was no template-based fallback — just an error message. This violates the "Natural Language Query Interface" requirement, which expects a natural-language answer regardless of environment.
+
+**Fix:** Rewrote `backend/app/services/ai_assistant.py` as a true hybrid:
+
+1. **Template-based NLG runs first** (`generate_answer_template`) — a deterministic per-intent template generator that produces polished natural language for all 9 intents using only the structured data. This always works, regardless of environment.
+2. **LLM refinement is best-effort** (`_try_llm_refine`) — if the `z-ai` CLI is available, the template answer is sent to the LLM for refinement. On any error (CLI missing, timeout, parse failure, empty response), the LLM step returns `None` and the template answer is used as-is.
+3. Added `llm_used: bool` field to the response so callers can see which path ran.
+
+Sample template output for "How many available seats are there?":
+```
+There are **203 available seats** right now. Breakdown by floor — Floor 1: 5 seats.
+Sample seat numbers: F1-A-001, F1-A-004, F1-A-008, F1-A-012, F1-A-016 and 15 more.
+You can allocate any of these to a new joiner via the New Joiners page or the Seat Map.
+```
+
+**Files affected:** `backend/app/services/ai_assistant.py` (rewrote NLG architecture), `backend/app/schemas/__init__.py` (added `llm_used` field to `AIResponse`)
+
+**Validation method:**
+- Tested 6 sample queries via `/api/v1/ai/query` with LLM enabled — all return polished natural-language answers in 1.3-3.3s with `llm_used: true`.
+- Tested `generate_answer_template()` in isolation (bypassing LLM) — produces real natural-language answers for all 9 intents.
+- This means production deployments without the `z-ai` CLI still get real natural-language answers (with `llm_used: false`).
+
+---
+
 ## Summary
 
-All 11 issues were caught during development (not in production) via:
+All 12 issues were caught during development (not in production) via:
 - TypeScript strict-mode build checks (`npm run build`)
 - Python smoke test script (`scripts/test_endpoints.py`)
 - Manual browser testing of each frontend page
