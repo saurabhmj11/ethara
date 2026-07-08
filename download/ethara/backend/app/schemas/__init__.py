@@ -197,6 +197,7 @@ class AIResponse(BaseModel):
     sql: Optional[str] = None
     intent: Optional[str] = None
     elapsed_ms: int = 0
+    llm_used: bool = False
 
 
 # ---------- Dashboard ----------
