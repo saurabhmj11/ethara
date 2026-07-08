@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from fastapi import BackgroundTasks
 
 from app.core.config import settings
 from app.core.database import Base, engine
@@ -60,3 +61,28 @@ def root():
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "healthy"}
+
+@app.post("/api/seed-database", tags=["Admin"])
+def seed_database_route(background_tasks: BackgroundTasks):
+    def run_seed():
+        from scripts.seed_db import reset_database, seed_projects, seed_floors_bays_seats, seed_employees, seed_activity_logs
+        from app.core.database import SessionLocal
+        
+        reset_database()
+        db = SessionLocal()
+        try:
+            n_emp = settings.SEED_EMPLOYEES
+            n_proj = settings.SEED_PROJECTS
+            n_floors = settings.SEED_FLOORS
+            n_bays = settings.SEED_BAYS_PER_FLOOR
+            n_seats = 26
+            projects = seed_projects(db, n_proj)
+            floors, bays, seats = seed_floors_bays_seats(db, n_floors, n_bays, n_seats)
+            employees = seed_employees(db, projects, seats, n_emp)
+            seed_activity_logs(db, employees, seats)
+        finally:
+            db.close()
+
+    background_tasks.add_task(run_seed)
+    return {"message": "Database seed started in the background! Please wait about 30-45 seconds for it to finish."}
+
